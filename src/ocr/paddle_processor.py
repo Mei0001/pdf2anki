@@ -74,34 +74,25 @@ class PaddleOCRProcessor:
     def _init_ocr_engines(self):
         """OCRエンジンの初期化"""
         try:
-            # テキストOCR初期化
-            self.text_ocr = PaddleOCR(
-                use_angle_cls=self.paddle_config.get('use_angle_cls', True),
-                lang=self.paddle_config.get('lang', 'ja+en'),
-                use_gpu=self.paddle_config.get('use_gpu', False),
-                det_model_dir=None,  # デフォルトモデル使用
-                rec_model_dir=None,
-                cls_model_dir=None,
-                show_log=False
-            )
+            # より詳細なデバッグ情報
+            logger.info("Starting PaddleOCR initialization...")
+            logger.info(f"Using language: {self.paddle_config.get('lang', 'japan')}")
+            logger.info(f"Use angle classification: {self.paddle_config.get('use_angle_cls', True)}")
+            
+            # 最もシンプルな設定で初期化
+            logger.info("Attempting to initialize PaddleOCR with minimal settings...")
+            self.text_ocr = PaddleOCR(lang='japan')
             
             # 数式OCRの初期化（PP-FormulaNetが利用可能な場合）
-            self.formula_ocr = None
-            if self.formula_config.get('enabled', True):
-                try:
-                    # 数式認識モジュールの初期化を試行
-                    from paddleocr import PPFormula
-                    model_name = self.formula_config.get('model', 'PP-FormulaNet-L')
-                    self.formula_ocr = PPFormula(model_name=model_name)
-                    logger.info(f"Formula OCR initialized with model: {model_name}")
-                except Exception as e:
-                    logger.warning(f"Formula OCR initialization failed: {e}")
-                    logger.info("Falling back to text OCR for formula regions")
+            self.formula_ocr = None  # 数式OCRは後回し
+            logger.warning("Skipping formula OCR initialization for debugging")
             
             logger.info("PaddleOCR engines initialized successfully")
             
         except Exception as e:
             logger.error(f"Failed to initialize OCR engines: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             raise
     
     def process_image(self, image_path: str, page_number: int = 1) -> PageOCRResult:
@@ -174,7 +165,7 @@ class PaddleOCRProcessor:
         """テキストOCR実行"""
         try:
             # PaddleOCRでテキスト認識
-            ocr_results = self.text_ocr.ocr(image, cls=True)
+            ocr_results = self.text_ocr.ocr(image)
             
             results = []
             if ocr_results and ocr_results[0]:

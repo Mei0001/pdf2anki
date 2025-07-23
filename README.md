@@ -4,143 +4,223 @@
 
 ## 概要
 
-特定のPDF（数学書・教材）をインプットとして、以下を自動化：
+数学のPDFファイルを入力として、以下の処理を自動化します：
 
-1. **PDF解析**: 画像化されたPDFから定義・定理・命題を検出
-2. **OCR & LaTeX変換**: 数式を含むテキストをLaTeX形式で抽出
-3. **カード生成**: Obsidian to Ankiプラグイン対応形式で出力
-4. **依存関係管理**: 概念間の前提関係を自動解析・タグ付け
+1. **PDF解析**: PDFからテキストブロックを抽出
+2. **LaTeX変換**: GPT-4oを使用してOCRテキストを高品質なLaTeX形式に変換
+3. **カード生成**: 定義・定理・命題を自動検出してフラッシュカード化
+4. **Obsidian出力**: Obsidian-to-Ankiプラグイン対応形式で保存
 
 ## 特徴
 
-- 📚 **数学特化**: 数式・定理・証明に特化したOCR処理
-- 🔗 **依存関係可視化**: ObsidianのグラフビューでKnowledge Graph構築
-- 🎯 **高精度**: PaddleOCR + GPT-4oによる最新技術スタック
-- ⚡ **バッチ処理**: 大容量PDF対応の文脈保持チャンク分割
-- 🎨 **カスタマイズ可能**: プロンプト・テンプレート調整対応
+- 📚 **数学特化**: 数式・定理・証明に特化したLaTeX変換
+- 🤖 **AI高精度**: OpenAI GPT-4oによる最新技術での変換精度
+- ⚡ **高速処理**: キャッシュ機能による効率的な処理
+- 🎯 **実用的**: 実際のObsidianとAnkiで使用可能な形式で出力
+- 🛠 **カスタマイズ可能**: プロンプトテンプレートの調整が可能
 
 ## 技術スタック
 
-### OCR・数式認識
-- **PaddleOCR 3.x + PP-FormulaNet-L**: 高精度数式認識
-- **Pix2Text v1.1**: 軽量版OCR（CPU対応）
-- **pdf2image + PyMuPDF**: PDF前処理
+### 主要技術
+- **OpenAI GPT-4o**: 高精度LaTeX変換とカード抽出
+- **PyMuPDF**: PDF処理とテキスト抽出
+- **PaddleOCR**: OCR処理（数式認識対応）
+- **Self-refine**: LaTeX構文自動検証・修正
 
-### LLM・変換層
-- **OpenAI GPT-4o**: 最高精度のテキスト→LaTeX変換
-- **Claude 3.5 Sonnet**: 長文コンテキスト対応
-- **Self-refine**: エラー修正ループ
+### 出力形式
+- **Obsidian-to-Anki形式**: START/BACK/END区切りでの出力
+- **Markdown + YAML**: メタデータ付きの構造化出力
 
-### 出力・連携
-- **Obsidian to Anki**: フラッシュカード形式出力
-- **YAML Frontmatter**: メタデータ管理
-- **依存関係グラフ**: 自動リンク生成
+## インストール
 
-## 出力カード例
+```bash
+# リポジトリのクローン
+git clone https://github.com/[username]/pdf2anki.git
+cd pdf2anki
+
+# 依存関係のインストール
+pip install -r requirements.txt
+
+# 設定ファイルのセットアップ
+cp config/settings.example.yaml config/settings.yaml
+```
+
+## 設定
+
+`config/settings.yaml` でOpenAI APIキーを設定：
+
+```yaml
+api_keys:
+  openai: "your-openai-api-key-here"
+
+llm:
+  openai:
+    model: "gpt-4o"
+    max_tokens: 4000
+    temperature: 0.1
+```
+
+## 使用方法
+
+### 基本的な使用方法
+
+```bash
+# メインデモの実行（サンプルPDFを使用）
+python final_demo.py
+
+# カスタムPDFでテスト
+python custom_test.py "your_math_book.pdf"
+```
+
+### プログラムでの使用
+
+```python
+from src.utils.config_loader import ConfigLoader
+from src.llm.gpt_client import GPTClient, ConversionRequest
+from src.utils.pdf_utils import PDFProcessor
+
+# 設定読み込み
+config = ConfigLoader().config
+
+# PDF処理
+pdf_processor = PDFProcessor(config)
+pages_info = pdf_processor.extract_text_blocks("math_book.pdf")
+
+# GPTクライアント初期化
+gpt_client = GPTClient(config)
+
+# LaTeX変換
+request = ConversionRequest(
+    text="サンプルテキスト",
+    page_number=1,
+    source_info={'chapter': '第1章', 'page': 1}
+)
+result = gpt_client.convert_to_latex(request)
+
+# カード抽出
+cards = gpt_client.extract_cards(result.latex_content, {'page': 1})
+```
+
+## 出力例
+
+システムが生成するObsidian形式のカードファイル例：
 
 ```markdown
----
-title: "ボルツァーノ・ワイエルシュトラス定理"
-type: "定理"
-source: "解析入門"
-chapter: "第3章 数列と級数"
-page: 42
-requires:
-  - "[[コンパクト集合の定義]]"
-  - "[[有界閉集合の性質]]"
-tags: [解析学, 実数論, 収束]
+# 開集合
+
+Type: 定義
+Confidence: 0.95
+Source: Page 1
+
 ---
 
 START
-解析学_基礎
-Front: 有界な数列に関するボルツァーノ・ワイエルシュトラス定理を述べよ
-Back: $\mathbb{R}$における有界な数列は収束する部分列を持つ
-Tags: 解析学, 定理, 収束
+距離空間における開集合とは何ですか？
+BACK
+距離空間 $(X, d)$ において、集合 $U \subseteq X$ が開集合であるとは、任意の点 $x \in U$ に対して、ある $\epsilon > 0$ が存在し、$B(x, \epsilon) \subseteq U$ となることをいう。
 END
 
-**定理の詳細:**
-$\{a_n\}$を有界な実数列とする。このとき、$\{a_n\}$の部分列$\{a_{n_k}\}$で収束するものが存在する。
+---
 
-**前提条件:**
-- [[コンパクト集合の定義]]
-- [[有界閉集合の性質]]
+## Full Content
+
+距離空間 $(X, d)$ において、集合 $U \subseteq X$ が開集合であるとは、任意の点 $x \in U$ に対して、ある $\epsilon > 0$ が存在し、$B(x, \epsilon) \subseteq U$ となることをいう。
 ```
 
-## システム構成
+## プロジェクト構成
 
 ```
 pdf2anki/
 ├── src/
-│   ├── ocr/                    # OCR・数式認識層
-│   │   ├── paddle_processor.py
-│   │   └── pix2text_processor.py
-│   ├── llm/                    # LLM変換層
-│   │   ├── gpt_client.py
-│   │   ├── claude_client.py
-│   │   └── self_refine.py
-│   ├── core/                   # コア機能
-│   │   ├── chunker.py
-│   │   ├── card_generator.py
-│   │   └── dependency_analyzer.py
-│   └── utils/                  # ユーティリティ
-│       ├── pdf_utils.py
-│       └── latex_validator.py
-├── config/                     # 設定ファイル
-│   ├── models.yaml
-│   └── prompts/
-├── templates/                  # 出力テンプレート
-│   └── obsidian_card.md
-└── tests/                      # テスト
+│   ├── core/
+│   │   └── card_generator.py      # メインのカード生成機能
+│   ├── llm/
+│   │   └── gpt_client.py          # OpenAI GPT-4o クライアント
+│   ├── ocr/
+│   │   └── paddle_processor.py    # PaddleOCR処理
+│   └── utils/
+│       ├── config_loader.py       # 設定管理
+│       └── pdf_utils.py           # PDF処理ユーティリティ
+├── config/
+│   ├── settings.yaml              # メイン設定ファイル
+│   ├── settings.example.yaml      # 設定ファイルのテンプレート
+│   └── prompts/                   # GPTプロンプトテンプレート
+│       ├── latex_conversion.txt   # LaTeX変換プロンプト
+│       └── card_extraction.txt    # カード抽出プロンプト
+├── tests/                         # ユニットテスト
+├── final_demo.py                  # メインデモスクリプト
+├── custom_test.py                 # カスタムテスト用
+└── requirements.txt               # 依存関係
 ```
 
-## クイックスタート
+## テスト方法
 
+### 1. 基本テスト
 ```bash
-# 1. インストール
-git clone https://github.com/[username]/pdf2anki.git
-cd pdf2anki
-pip install -r requirements.txt
-
-# 2. 設定
-cp config/settings.example.yaml config/settings.yaml
-# API keys等を設定
-
-# 3. 実行
-python -m pdf2anki process sample.pdf --output cards/
+# 全体の動作確認
+python final_demo.py
 ```
 
-## 使用例
-
-```python
-from pdf2anki import PDF2AnkiProcessor
-
-processor = PDF2AnkiProcessor(
-    ocr_model="paddle",      # "paddle" or "pix2text"
-    llm_model="gpt-4o",      # "gpt-4o" or "claude-3.5"
-    output_format="obsidian"  # 出力形式
-)
-
-# PDF処理
-cards = processor.process("math_textbook.pdf")
-
-# Obsidian vault保存
-processor.save_to_obsidian(cards, "path/to/obsidian/vault")
+### 2. カスタムPDFテスト
+```bash
+# 自分のPDFファイルでテスト
+python custom_test.py "path/to/your/math_book.pdf"
 ```
 
-## 開発状況
+### 3. コンポーネント別テスト
+```bash
+# ユニットテストの実行
+python -m pytest tests/
 
-- [ ] 基本プロジェクト構造
-- [ ] PDF前処理機能
-- [ ] OCR実装（PaddleOCR）
-- [ ] LLM連携（GPT-4o）
-- [ ] カード生成機能
-- [ ] 依存関係解析
-- [ ] Obsidian出力
-- [ ] テスト・ドキュメント
+# 特定のテストのみ実行
+python -m pytest tests/test_gpt_client.py
+```
+
+## 動作確認済み環境
+
+- Python 3.8+
+- macOS (Darwin 24.5.0)
+- OpenAI API (GPT-4o)
+
+## 制限事項
+
+- OpenAI APIキーが必要
+- 数式を含む日本語テキストに特化
+- PaddleOCRの初期化に時間がかかる場合がある
+
+## トラブルシューティング
+
+### よくある問題
+
+1. **OpenAI API エラー**
+   - API キーが正しく設定されているか確認
+   - API利用制限に達していないか確認
+
+2. **PaddleOCR初期化エラー**
+   - モデルのダウンロードに時間がかかる場合があります
+   - ネットワーク接続を確認してください
+
+3. **依存関係エラー**
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
 
 ## ライセンス
 
 MIT License
+
+## 開発状況
+
+- ✅ 基本プロジェクト構造
+- ✅ PDF前処理機能
+- ✅ OCR実装（PaddleOCR）
+- ✅ LLM連携（GPT-4o）
+- ✅ カード生成機能
+- ✅ Obsidian形式出力
+- ✅ テスト・デモスクリプト
+- 🔄 依存関係解析（部分実装）
+- 🔄 CLI インターフェース（今後実装予定）
 
 ## 貢献
 
@@ -148,6 +228,7 @@ Issue・PRお待ちしています！
 
 ## 参考文献
 
+- [OpenAI GPT-4o Documentation](https://platform.openai.com/docs)
 - [PaddleOCR Documentation](https://paddlepaddle.github.io/PaddleOCR/)
 - [Obsidian to Anki Plugin](https://github.com/ObsidianToAnki/Obsidian_to_Anki)
-- [Pix2Text](https://github.com/breezedeus/Pix2Text)
+- [PyMuPDF Documentation](https://pymupdf.readthedocs.io/)

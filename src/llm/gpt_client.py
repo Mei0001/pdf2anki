@@ -241,6 +241,8 @@ JSON形式で出力してください:""",
         except Exception as e:
             processing_time = time.time() - start_time
             logger.error(f"LaTeX conversion failed: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             
             return ConversionResult(
                 original_text=request.text,
@@ -278,32 +280,255 @@ JSON形式で出力してください:""",
                 timeout=self.timeout
             )
             
+            # 生のレスポンス取得
+            raw_response = response.choices[0].message.content.strip()
+            logger.debug(f"Raw GPT response for card extraction:\n{raw_response}")
+            
+            # JSON抽出の試行
+            json_text = self._extract_json_from_response(raw_response)
+            logger.debug(f"Extracted JSON text:\n{json_text}")
+            
             # JSON解析
-            result_text = response.choices[0].message.content.strip()
+            card_data = self._parse_json_safely(json_text)
             
-            # JSONの抽出（コードブロックがある場合）
-            if "```json" in result_text:
-                json_start = result_text.find("```json") + 7
-                json_end = result_text.find("```", json_start)
-                result_text = result_text[json_start:json_end].strip()
-            elif "```" in result_text:
-                json_start = result_text.find("```") + 3
-                json_end = result_text.find("```", json_start)
-                result_text = result_text[json_start:json_end].strip()
+            if not card_data:
+                logger.warning("Failed to parse JSON, attempting fallback extraction")
+                return self._fallback_card_extraction(raw_response, source_info)
             
-            card_data = json.loads(result_text)
             cards = card_data.get('cards', [])
             
-            # ソース情報を各カードに追加
-            for card in cards:
-                card.update(source_info)
+            # カードデータの検証
+            valid_cards = []
+            for i, card in enumerate(cards):
+                if self._validate_card_data(card):
+                    # ソース情報を各カードに追加
+                    card.update(source_info)
+                    valid_cards.append(card)
+                else:
+                    logger.warning(f"Skipping invalid card at index {i}: {card}")
             
-            logger.info(f"Extracted {len(cards)} cards from LaTeX text")
-            return cards
+            logger.info(f"Extracted {len(valid_cards)} valid cards from LaTeX text")
+            return valid_cards
             
         except Exception as e:
             logger.error(f"Card extraction failed: {e}")
+            logger.error(f"Input LaTeX text (first 200 chars): {latex_text[:200]}...")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return []
+    
+    def _extract_json_from_response(self, response_text: str) -> str:
+        """GPTレスポンスからJSON部分を抽出
+        
+        Args:
+            response_text: GPTからの生レスポンス
+            
+        Returns:
+            抽出されたJSON文字列
+        """
+        import re
+        
+        # 複数のパターンでJSON抽出を試行
+        patterns = [
+            # ```json ... ``` パターン
+            r'```json\s*\n(.*?)\n```',
+            # ``` ... ``` パターン（jsonタグなし）
+            r'```\s*\n(.*?)\n```',
+            # { ... } パターン（改行を含む）
+            r'(\{[^{}]*"cards"[^{}]*\[[^\]]*\][^{}]*\})',
+            # シンプルな { ... } パターン（単一行）
+            r'(\{.*?"cards".*?\})',
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, response_text, re.DOTALL | re.IGNORECASE)
+            if matches:
+                json_candidate = matches[0].strip()
+                logger.debug(f"JSON extraction pattern matched: {pattern}")
+                return json_candidate
+        
+        # パターンマッチが失敗した場合、レスポンス全体を試用
+        logger.warning("No JSON pattern matched, using full response")
+        return response_text
+    
+    def _parse_json_safely(self, json_text: str) -> Optional[Dict[str, Any]]:
+        """安全なJSON解析（エラー回復機能付き）
+        
+        Args:
+            json_text: JSON文字列
+            
+        Returns:
+            解析されたJSONデータ、失敗時はNone
+        """
+        if not json_text.strip():
+            logger.warning("Empty JSON text provided")
+            return None
+        
+        # 最初の解析試行
+        try:
+            return json.loads(json_text)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Initial JSON parsing failed: {e}")
+            logger.debug(f"Failed JSON text: {json_text[:500]}...")
+        
+        # JSON修復を試行
+        cleaned_json = self._clean_json_text(json_text)
+        try:
+            return json.loads(cleaned_json)
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON parsing failed after cleanup: {e}")
+            logger.debug(f"Cleaned JSON text: {cleaned_json[:500]}...")
+        
+        # 部分的なJSON抽出を試行
+        partial_json = self._extract_partial_json(json_text)
+        if partial_json:
+            try:
+                return json.loads(partial_json)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Partial JSON parsing failed: {e}")
+        
+        return None
+    
+    def _clean_json_text(self, json_text: str) -> str:
+        """JSON文字列のクリーンアップ
+        
+        Args:
+            json_text: 元のJSON文字列
+            
+        Returns:
+            クリーンアップされたJSON文字列
+        """
+        import re
+        
+        # 先頭・末尾の不要な文字を除去
+        cleaned = json_text.strip()
+        
+        # 文字化けした引用符を修正
+        cleaned = re.sub(r'[""]', '"', cleaned)  # スマートクオートを通常の引用符に
+        cleaned = re.sub(r'[''`]', "'", cleaned)  # スマートアポストロフィを通常のアポストロフィに
+        
+        # 不正な改行を除去
+        cleaned = re.sub(r'\n\s*"', ' "', cleaned)
+        
+        # 末尾のカンマを修正
+        cleaned = re.sub(r',\s*}', '}', cleaned)
+        cleaned = re.sub(r',\s*]', ']', cleaned)
+        
+        # 不完全な文字列の修復
+        cleaned = re.sub(r'"([^"]*)\n([^"]*)"', r'"\1 \2"', cleaned)
+        
+        return cleaned
+    
+    def _extract_partial_json(self, text: str) -> Optional[str]:
+        """部分的なJSONの抽出を試行
+        
+        Args:
+            text: 元のテキスト
+            
+        Returns:
+            抽出できた部分JSON、失敗時はNone
+        """
+        import re
+        
+        # "cards"キーを含む部分的なJSONを探す
+        cards_pattern = r'"cards"\s*:\s*\[([^\]]*)\]'
+        cards_match = re.search(cards_pattern, text, re.DOTALL)
+        
+        if cards_match:
+            try:
+                # 最小限のJSON構造を作成
+                cards_content = cards_match.group(1)
+                partial_json = f'{{"cards": [{cards_content}]}}'
+                return partial_json
+            except Exception as e:
+                logger.debug(f"Failed to create partial JSON: {e}")
+        
+        return None
+    
+    def _validate_card_data(self, card: Dict[str, Any]) -> bool:
+        """カードデータの検証
+        
+        Args:
+            card: カードデータ
+            
+        Returns:
+            検証結果
+        """
+        required_fields = ['type', 'title', 'content', 'front', 'back', 'confidence']
+        
+        for field in required_fields:
+            if field not in card:
+                logger.warning(f"Missing required field '{field}' in card data")
+                return False
+            
+            if not card[field] and field != 'confidence':  # confidenceは0でも有効
+                logger.warning(f"Empty value for required field '{field}' in card data")
+                return False
+        
+        # 信頼度の範囲チェック
+        try:
+            confidence = float(card['confidence'])
+            if not (0.0 <= confidence <= 1.0):
+                logger.warning(f"Invalid confidence value: {confidence} (must be 0.0-1.0)")
+                return False
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid confidence value type: {card['confidence']}")
+            return False
+        
+        # カードタイプの検証
+        valid_types = ['定義', '定理', '命題', '補題', '系', '例', '注意']
+        if card['type'] not in valid_types:
+            logger.warning(f"Invalid card type: {card['type']}")
+            # 型が無効でも処理を継続（警告のみ）
+        
+        return True
+    
+    def _fallback_card_extraction(self, response_text: str, source_info: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """フォールバックカード抽出（JSON解析失敗時）
+        
+        Args:
+            response_text: GPTからの生レスポンス
+            source_info: ソース情報
+            
+        Returns:
+            抽出できたカード情報のリスト
+        """
+        logger.info("Attempting fallback card extraction from response text")
+        
+        # 基本的なパターンマッチングでカード情報を抽出
+        import re
+        cards = []
+        
+        # 定義、定理などのパターンを探す
+        concept_patterns = [
+            r'(定義|定理|命題|補題|系|例|注意)[:：]\s*([^\n]+)',
+            r'(Definition|Theorem|Proposition|Lemma|Corollary|Example|Remark)[:：]\s*([^\n]+)',
+        ]
+        
+        for pattern in concept_patterns:
+            matches = re.findall(pattern, response_text, re.IGNORECASE)
+            for match in matches:
+                concept_type = match[0]
+                concept_content = match[1].strip()
+                
+                if concept_content:
+                    card = {
+                        'type': concept_type,
+                        'title': concept_content[:50] + '...' if len(concept_content) > 50 else concept_content,
+                        'content': concept_content,
+                        'front': f"{concept_type}について説明してください",
+                        'back': concept_content,
+                        'confidence': 0.5  # フォールバック抽出では低い信頼度
+                    }
+                    card.update(source_info)
+                    cards.append(card)
+        
+        if cards:
+            logger.info(f"Fallback extraction found {len(cards)} potential cards")
+        else:
+            logger.warning("Fallback extraction found no cards")
+        
+        return cards
     
     def _self_refine_latex(self, latex_content: str) -> SelfRefineResult:
         """LaTeXコードのSelf-refine処理

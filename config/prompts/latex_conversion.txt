@@ -6,22 +6,22 @@
 
 1. **数式記法の正確性**:
    - インライン数式: $...$ 
-   - ディスプレイ数式: $$...$$ または \begin{equation}...\end{equation}
-   - 複数行数式: \begin{align}...\end{align}
+   - ディスプレイ数式: $$...$$ または \begin{{equation}}...\end{{equation}}
+   - 複数行数式: \begin{{align}}...\end{{align}}
 
 2. **数学記号の適切な表現**:
    - 積分: \int_a^b, \iint, \iiint
-   - 総和: \sum_{i=1}^n, \prod_{i=1}^n
-   - 極限: \lim_{x \to \infty}
-   - 微分: \frac{d}{dx}, \partial, \nabla
+   - 総和: \sum_{{i=1}}^n, \prod_{{i=1}}^n
+   - 極限: \lim_{{x \to \infty}}
+   - 微分: \frac{{d}}{{dx}}, \partial, \nabla
    - ギリシャ文字: \alpha, \beta, \gamma, \delta, \epsilon, ...
 
 3. **定理・定義の構造化**:
-   - 定理 (Theorem): \begin{theorem}...\end{theorem}
-   - 定義 (Definition): \begin{definition}...\end{definition}
-   - 補題 (Lemma): \begin{lemma}...\end{lemma}
-   - 命題 (Proposition): \begin{proposition}...\end{proposition}
-   - 証明 (Proof): \begin{proof}...\end{proof}
+   - 定理 (Theorem): \begin{{theorem}}...\end{{theorem}}
+   - 定義 (Definition): \begin{{definition}}...\end{{definition}}
+   - 補題 (Lemma): \begin{{lemma}}...\end{{lemma}}
+   - 命題 (Proposition): \begin{{proposition}}...\end{{proposition}}
+   - 証明 (Proof): \begin{{proof}}...\end{{proof}}
 
 4. **日本語テキストの処理**:
    - 自然な日本語表現に補正

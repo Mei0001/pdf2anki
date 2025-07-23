@@ -62,6 +62,8 @@ output/
 # Test outputs
 test_output/
 test_cards/
+*_output/
+*.log
 
 # Obsidian vault files (if testing locally)
 .obsidian/
